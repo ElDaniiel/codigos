@@ -1,20 +1,86 @@
+/*========================================================*/
+/* 1. AGREGACIÓN BASE (tu cálculo original)                */
+/*========================================================*/
+proc sql;
+create table gmc_input as 
+select 
+    año,
+    pool,
+    polvig,
+    nsub,
+    fini,
+    tneg,
+    nvaren,
+    edad,
+    sexo,
+    programa,
+    idbh,
+    sum(vig03) as vigor,
+    titular_dependiente,
+    cuidado_integral
+from base_gmc
+where año in ("2022","2023","2024","2025","2026")
+group by 
+    año,
+    pool,
+    polvig,
+    nsub,
+    fini,
+    tneg,
+    nvaren,
+    edad,
+    sexo,
+    programa,
+    idbh,
+    titular_dependiente,
+    cuidado_integral;
+quit;
+
+
+/*========================================================*/
+/* 2. ORDENAMIENTO (CRÍTICO para lógica temporal)          */
+/*========================================================*/
+proc sort data=gmc_input;
+    by pool polvig nsub tneg programa edad sexo fini;
+run;
+
+
+/*========================================================*/
+/* 3. AJUSTE DE VIGOR (rellenar ceros con mes anterior)    */
+/*========================================================*/
+data gmc_input_fix;
+    set gmc_input;
+    by pool polvig nsub tneg programa edad sexo;
+
+    retain last_vigor;
+
+    /* Reinicia por grupo */
+    if first.sexo then last_vigor = .;
+
+    /* Si hay valor válido, lo guarda */
+    if vigor > 0 then last_vigor = vigor;
+
+    /* Si está en 0, usa el anterior */
+    else if vigor = 0 then vigor = last_vigor;
+
+run;
+
+
+/*========================================================*/
+/* 4. CÁLCULO FINAL DE ASEGURADOS VIGENTES                 */
+/*========================================================*/
 proc sql;
 create table gmc_input1 as 
 select distinct 
     a.*,
     b.asegurados_vigentes
-from gmc_input as a
+from gmc_input_fix as a
 left join (
     select 
         año,
         pool,
-        sum(
-            case 
-                when vigor > 0 then vigor
-                else vigor2
-            end
-        ) as asegurados_vigentes
-    from gmc_input
+        sum(vigor) as asegurados_vigentes
+    from gmc_input_fix
     where polvig = 1
     group by año, pool
 ) as b

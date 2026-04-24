@@ -1,20 +1,23 @@
-proc sort data=gmc_input;
-    by pool año fini;
-run;
-
-data gmc_input_fix;
-    set gmc_input;
-    by pool año;
-
-    retain last_vigor;
-
-    /* Reset por grupo */
-    if first.pool then last_vigor = .;
-
-    /* Si hay valor válido lo guardo */
-    if vigor > 0 then last_vigor = vigor;
-
-    /* Si está en 0, uso el anterior */
-    else if vigor = 0 then vigor = last_vigor;
-
-run;code
+proc sql;
+create table gmc_input1 as 
+select distinct 
+    a.*,
+    b.asegurados_vigentes
+from gmc_input as a
+left join (
+    select 
+        año,
+        pool,
+        sum(
+            case 
+                when vigor > 0 then vigor
+                else vigor2
+            end
+        ) as asegurados_vigentes
+    from gmc_input
+    where polvig = 1
+    group by año, pool
+) as b
+on a.año = b.año 
+and a.pool = b.pool;
+quit;

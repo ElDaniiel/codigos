@@ -1,89 +1,66 @@
-/*========================================================*/
-/* 1. AGREGACIÓN BASE (tu cálculo original)                */
-/*========================================================*/
 proc sql;
-create table gmc_input as 
-select 
-    año,
-    pool,
-    polvig,
-    nsub,
-    fini,
-    tneg,
-    nvaren,
-    edad,
-    sexo,
-    programa,
-    idbh,
-    sum(vig03) as vigor,
-    titular_dependiente,
-    cuidado_integral
-from base_gmc
-where año in ("2022","2023","2024","2025","2026")
-group by 
-    año,
-    pool,
-    polvig,
-    nsub,
-    fini,
-    tneg,
-    nvaren,
-    edad,
-    sexo,
-    programa,
-    idbh,
-    titular_dependiente,
-    cuidado_integral;
-quit;
-
-
-/*========================================================*/
-/* 2. ORDENAMIENTO (CRÍTICO para lógica temporal)          */
-/*========================================================*/
-proc sort data=gmc_input;
-    by pool polvig nsub tneg programa edad sexo fini;
-run;
-
-
-/*========================================================*/
-/* 3. AJUSTE DE VIGOR (rellenar ceros con mes anterior)    */
-/*========================================================*/
-data gmc_input_fix;
-    set gmc_input;
-    by pool polvig nsub tneg programa edad sexo;
-
-    retain last_vigor;
-
-    /* Reinicia por grupo */
-    if first.sexo then last_vigor = .;
-
-    /* Si hay valor válido, lo guarda */
-    if vigor > 0 then last_vigor = vigor;
-
-    /* Si está en 0, usa el anterior */
-    else if vigor = 0 then vigor = last_vigor;
-
-run;
-
-
-/*========================================================*/
-/* 4. CÁLCULO FINAL DE ASEGURADOS VIGENTES                 */
-/*========================================================*/
-proc sql;
-create table gmc_input1 as 
-select distinct 
+create table gmc_input1_d as 
+select DISTINCT 
     a.*,
-    b.asegurados_vigentes
-from gmc_input_fix as a
+
+    b.asegurados_vigentes_dic,
+    b.aseg_CI,
+    b.aseg_sinCI,
+    b.aseg_salud,
+    b.aseg_plus,
+    b.aseg_estandar,
+
+    b.pct_CI,
+    b.pct_sinCI,
+    b.pct_salud,
+    b.pct_plus,
+    b.pct_estandar
+
+from gmc_input_d as a
+
 left join (
+
     select 
         año,
         pool,
-        sum(vigor) as asegurados_vigentes
-    from gmc_input_fix
-    where polvig = 1
+
+        /* BASE */
+        sum(vigor_dic) as asegurados_vigentes_dic,
+
+        sum(case when cuidado_integral="Si" then vigor_dic else 0 end) as aseg_CI,
+
+        sum(case when cuidado_integral="No" then vigor_dic else 0 end) as aseg_sinCI,
+
+        sum(case when cuidado_integral="Si" 
+                 and upcase(strip(PROGRAMA)) in ("INTEGRAL","TOTAL") 
+                 then vigor_dic else 0 end) as aseg_salud,
+
+        sum(case when cuidado_integral="Si" 
+                 and upcase(strip(PROGRAMA)) = "PLUS" 
+                 then vigor_dic else 0 end) as aseg_plus,
+
+        sum(case when cuidado_integral="Si" 
+                 and (upcase(strip(PROGRAMA)) not in ("PLUS","INTEGRAL","TOTAL") 
+                      or missing(PROGRAMA)) 
+                 then vigor_dic else 0 end) as aseg_estandar,
+
+        /* PORCENTAJES */
+        calculated aseg_CI / calculated asegurados_vigentes_dic as pct_CI format=percent8.2,
+
+        calculated aseg_sinCI / calculated asegurados_vigentes_dic as pct_sinCI format=percent8.2,
+
+        calculated aseg_salud / calculated asegurados_vigentes_dic as pct_salud format=percent8.2,
+
+        calculated aseg_plus / calculated asegurados_vigentes_dic as pct_plus format=percent8.2,
+
+        calculated aseg_estandar / calculated asegurados_vigentes_dic as pct_estandar format=percent8.2
+
+    from gmc_input_d
+    where POLVIG=1
     group by año, pool
+
 ) as b
-on a.año = b.año 
-and a.pool = b.pool;
+
+on a.año=b.año and a.pool=b.pool
+;
 quit;

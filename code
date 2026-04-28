@@ -1,66 +1,21 @@
-proc sql;
-create table gmc_input1_d as 
-select DISTINCT 
-    a.*,
+color_tasa =
+VAR min_val =
+    MINX(ALL(insumoGMI), [Tasa_gral])
 
-    b.asegurados_vigentes_dic,
-    b.aseg_CI,
-    b.aseg_sinCI,
-    b.aseg_salud,
-    b.aseg_plus,
-    b.aseg_estandar,
+VAR max_val =
+    MAXX(ALL(insumoGMI), [Tasa_gral])
 
-    b.pct_CI,
-    b.pct_sinCI,
-    b.pct_salud,
-    b.pct_plus,
-    b.pct_estandar
+VAR rango = max_val - min_val
 
-from gmc_input_d as a
+VAR valor_norm =
+    DIVIDE([Tasa_gral] - min_val, rango)
 
-left join (
-
-    select 
-        año,
-        pool,
-
-        /* BASE */
-        sum(vigor_dic) as asegurados_vigentes_dic,
-
-        sum(case when cuidado_integral="Si" then vigor_dic else 0 end) as aseg_CI,
-
-        sum(case when cuidado_integral="No" then vigor_dic else 0 end) as aseg_sinCI,
-
-        sum(case when cuidado_integral="Si" 
-                 and upcase(strip(PROGRAMA)) in ("INTEGRAL","TOTAL") 
-                 then vigor_dic else 0 end) as aseg_salud,
-
-        sum(case when cuidado_integral="Si" 
-                 and upcase(strip(PROGRAMA)) = "PLUS" 
-                 then vigor_dic else 0 end) as aseg_plus,
-
-        sum(case when cuidado_integral="Si" 
-                 and (upcase(strip(PROGRAMA)) not in ("PLUS","INTEGRAL","TOTAL") 
-                      or missing(PROGRAMA)) 
-                 then vigor_dic else 0 end) as aseg_estandar,
-
-        /* PORCENTAJES */
-        calculated aseg_CI / calculated asegurados_vigentes_dic as pct_CI format=percent8.2,
-
-        calculated aseg_sinCI / calculated asegurados_vigentes_dic as pct_sinCI format=percent8.2,
-
-        calculated aseg_salud / calculated asegurados_vigentes_dic as pct_salud format=percent8.2,
-
-        calculated aseg_plus / calculated asegurados_vigentes_dic as pct_plus format=percent8.2,
-
-        calculated aseg_estandar / calculated asegurados_vigentes_dic as pct_estandar format=percent8.2
-
-    from gmc_input_d
-    where POLVIG=1
-    group by año, pool
-
-) as b
-
-on a.año=b.año and a.pool=b.pool
-;
-quit;
+RETURN
+    SWITCH(
+        TRUE(),
+        valor_norm <= 0.2, "#FF0000",
+        valor_norm <= 0.4, "#FF7F00",
+        valor_norm <= 0.6, "#FFFF00",
+        valor_norm <= 0.8, "#7FFF00",
+        "#00B050"
+    )
